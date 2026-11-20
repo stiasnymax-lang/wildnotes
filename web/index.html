@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <!--
+    Der Platzhalter wird beim Build durch `--base-href` ersetzt
+    (für GitHub Pages z. B. "/<repository>/").
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="WildNotes – Tierprotokoll, Terminkalender und Gehegekarte für Zoos und Tierparks">
+
+  <!-- Passt die App an Bildschirmgröße und Display-Aussparungen (Notch) an. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+  <!-- Browserleiste in der App-Farbe, hell und dunkel -->
+  <meta name="theme-color" content="#2E7D32" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1B5E20" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+
+  <!-- Als App auf dem Homescreen installierbar (Android & iOS) -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="WildNotes">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>WildNotes</title>
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    /* Ladeanzeige, bis Flutter gestartet ist */
+    html, body { margin: 0; height: 100%; background: #2E7D32; }
+    #loading {
+      position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 16px;
+      color: #fff; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    #loading img { width: 96px; height: 96px; border-radius: 22px; }
+    @media (prefers-color-scheme: dark) { html, body { background: #1B5E20; } }
+  </style>
+</head>
+<body>
+  <div id="loading">
+    <img src="icons/Icon-192.png" alt="">
+    <div>WildNotes wird geladen …</div>
+  </div>
+  <script>
+    // Ladeanzeige entfernen, sobald die erste Flutter-Ansicht steht
+    window.addEventListener('flutter-first-frame', function () {
+      var el = document.getElementById('loading');
+      if (el) el.remove();
+    });
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

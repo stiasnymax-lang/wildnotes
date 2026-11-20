@@ -1,0 +1,151 @@
+rules_version = '2';
+
+// Sicherheitsregeln für WildNotes.
+//
+// Alle Daten liegen unter organizations/{orgId}. Lesen dürfen alle Mitglieder,
+// Schreiben hängt von den Berechtigungen der Rolle ab (siehe OrgPermission in
+// lib/org/organization.dart). Der Inhaber (ownerId) darf immer alles.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function myEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function orgPath(orgId) {
+      return /databases/$(database)/documents/organizations/$(orgId);
+    }
+
+    function memberPath(orgId) {
+      return /databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid);
+    }
+
+    function isMember(orgId) {
+      return signedIn() && exists(memberPath(orgId));
+    }
+
+    function isOwner(orgId) {
+      return signedIn() && get(orgPath(orgId)).data.ownerId == request.auth.uid;
+    }
+
+    function can(orgId, permission) {
+      return isMember(orgId) && (
+        isOwner(orgId) ||
+        get(orgPath(orgId)).data.roles[get(memberPath(orgId)).data.role]
+          .permissions.hasAny([permission])
+      );
+    }
+
+    // ------------------------------------------------------------------
+    // Benutzerprofil: aktive Organisation und eigene Mitgliedschaften
+    // ------------------------------------------------------------------
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+
+      match /memberships/{orgId} {
+        allow read, write: if signedIn() && request.auth.uid == uid;
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // Organisationen
+    // ------------------------------------------------------------------
+    match /organizations/{orgId} {
+      allow read: if isMember(orgId);
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid;
+      // Name und Rollen ändern; der Inhaber kann nicht gewechselt werden.
+      allow update: if can(orgId, 'roles.manage')
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.roles.owner == resource.data.roles.owner;
+      allow delete: if isOwner(orgId);
+
+      match /members/{memberId} {
+        allow read: if isMember(orgId);
+
+        allow create: if signedIn() && request.auth.uid == memberId && (
+          // Inhaber beim Anlegen der Organisation (im selben Batch)
+          (getAfter(orgPath(orgId)).data.ownerId == request.auth.uid
+            && request.resource.data.role == 'owner')
+          ||
+          // Annahme einer Einladung mit genau der eingeladenen Rolle
+          (request.resource.data.role != 'owner'
+            && get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(myEmail())).data.role
+               == request.resource.data.role)
+        );
+
+        // Rolle ändern – nie zum oder vom Inhaber
+        allow update: if can(orgId, 'members.manage')
+          && resource.data.role != 'owner'
+          && request.resource.data.role != 'owner'
+          && request.resource.data.email == resource.data.email;
+
+        // Entfernen durch Berechtigte oder selbst austreten (nicht Inhaber)
+        allow delete: if resource.data.role != 'owner' && (
+          can(orgId, 'members.manage') || request.auth.uid == memberId
+        );
+      }
+
+      match /invitations/{email} {
+        allow read: if can(orgId, 'members.manage')
+          || (signedIn() && myEmail() == email);
+        allow create, update: if can(orgId, 'members.manage')
+          && request.resource.data.email == email
+          && request.resource.data.orgId == orgId
+          && request.resource.data.role != 'owner';
+        allow delete: if can(orgId, 'members.manage')
+          || (signedIn() && myEmail() == email);
+      }
+
+      match /animals/{animalId} {
+        allow read: if isMember(orgId);
+        allow write: if can(orgId, 'animals.edit');
+
+        match /events/{eventId} {
+          allow read: if isMember(orgId);
+          allow write: if can(orgId, 'events.edit');
+        }
+      }
+
+      match /enclosures/{enclosureId} {
+        allow read: if isMember(orgId);
+        allow write: if can(orgId, 'animals.edit');
+      }
+
+      match /appointments/{appointmentId} {
+        allow read: if isMember(orgId);
+        allow create, delete: if can(orgId, 'appointments.edit');
+        allow update: if can(orgId, 'appointments.edit')
+          || (can(orgId, 'appointments.complete')
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['done', 'doneAt', 'doneByEmail']));
+      }
+    }
+
+    // Eigene Einladungen über alle Organisationen finden (Collection-Group).
+    match /{path=**}/invitations/{email} {
+      allow read: if signedIn() && resource.data.email == myEmail();
+    }
+
+    // ------------------------------------------------------------------
+    // Daten der alten App (vor den Organisationen). Nur noch für das
+    // Konto des Projektinhabers zugänglich: für die alte Android-App und
+    // für die Übernahme in eine Organisation. Alle anderen Konten haben
+    // keinen Zugriff.
+    // ------------------------------------------------------------------
+    function isLegacyOwner() {
+      return signedIn() && request.auth.uid in ['zxwTMwNFt8cyHnmFs4HVOTN5R7k2'];
+    }
+
+    match /animals/{document=**} {
+      allow read, write: if isLegacyOwner();
+    }
+    match /enclosures/{document=**} {
+      allow read, write: if isLegacyOwner();
+    }
+  }
+}

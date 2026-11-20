@@ -1,0 +1,73 @@
+# Baut die Flutter-Web-App und veröffentlicht sie auf GitHub Pages.
+# Läuft bei jedem Push auf "main" und kann im Reiter "Actions" manuell
+# gestartet werden.
+name: Web-App veröffentlichen
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Immer nur eine Veröffentlichung gleichzeitig
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.50.1
+          cache: true
+
+      - name: Abhängigkeiten laden
+        run: flutter pub get
+
+      - name: Tests
+        run: flutter test
+
+      # lib/firebase_options.dart enthält die API-Keys und liegt deshalb
+      # nicht im Repository, sondern im Secret FIREBASE_OPTIONS_DART
+      # (Settings → Secrets and variables → Actions).
+      - name: Firebase-Konfiguration aus Secret schreiben
+        env:
+          FIREBASE_OPTIONS_DART: ${{ secrets.FIREBASE_OPTIONS_DART }}
+        run: |
+          if [ -z "$FIREBASE_OPTIONS_DART" ]; then
+            echo "::error::Secret FIREBASE_OPTIONS_DART fehlt (Inhalt von lib/firebase_options.dart)."
+            exit 1
+          fi
+          printf '%s\n' "$FIREBASE_OPTIONS_DART" > lib/firebase_options.dart
+
+      # GitHub Pages liefert Projektseiten unter /<repository>/ aus,
+      # eine Benutzerseite (<name>.github.io) unter /.
+      - name: Web-App bauen
+        run: |
+          REPO="${{ github.event.repository.name }}"
+          if [[ "$REPO" == *.github.io ]]; then BASE="/"; else BASE="/$REPO/"; fi
+          flutter build web --release --base-href "$BASE"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Auf GitHub Pages veröffentlichen
+        id: deployment
+        uses: actions/deploy-pages@v4
