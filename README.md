@@ -82,6 +82,12 @@ JavaScript immer sichtbar – das ist bei Firebase so vorgesehen. Geschützt wir
 über die Firestore-Sicherheitsregeln und über Einschränkungen des Keys in der
 Google Cloud Console (erlaubte Websites/Android-App).
 
+Der Web-Key ist auf diese Websites beschränkt:
+`https://stiasnymax-lang.github.io/*`, `https://wildnotes-b8a05.firebaseapp.com/*`
+und `http://localhost:5000/*`. Deshalb legt `web_dev_config.yaml` den lokalen
+Entwicklungsserver fest auf Port 5000 – andere Ports werden von Google
+abgelehnt („Requests from referer … are blocked“).
+
 Android nutzt weiterhin die Application ID `hsa.de` der alten App.
 Zum Testen ohne Android-Gerät: `flutter run -d chrome`.
 

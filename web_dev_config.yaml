@@ -1,0 +1,9 @@
+# Lokaler Web-Entwicklungsserver (`flutter run -d chrome`).
+#
+# Fester Port, weil der Firebase-API-Key in der Google Cloud Console nur für
+# bestimmte Websites freigegeben ist – lokal für http://localhost:5000/*.
+# Bei einem zufälligen Port lehnt Google Registrierung und Login ab
+# ("Requests from referer ... are blocked").
+server:
+  host: localhost
+  port: 5000
