@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'join_code.dart';
 import 'organization.dart';
 
 /// Schreibende Aktionen rund um Organisationen, Mitglieder und Einladungen.
@@ -41,15 +42,19 @@ class OrgService {
         'role': kOwnerRoleId,
         'joinedAt': FieldValue.serverTimestamp(),
       })
-      ..set(_userDoc(user.uid).collection('memberships').doc(orgRef.id), {
-        'orgName': name,
-        'joinedAt': FieldValue.serverTimestamp(),
-      })
       ..set(_userDoc(user.uid), {
         'email': _emailOf(user),
         'activeOrgId': orgRef.id,
       }, SetOptions(merge: true));
     await batch.commit();
+
+    // Beitrittscode gleich mit erzeugen (eigener Schreibvorgang, weil die
+    // Sicherheitsregeln dafür die fertige Organisation prüfen).
+    try {
+      await createJoinCode(orgId: orgRef.id, orgName: name);
+    } on FirebaseException {
+      // Nicht schlimm – kann später im Organisations-Tab erzeugt werden.
+    }
     return orgRef.id;
   }
 
@@ -68,10 +73,7 @@ class OrgService {
     // Zuerst die aktive Organisation abwählen, damit die App nicht
     // "Zugriff verloren" meldet.
     await selectOrganization(user, null);
-    final batch = _db.batch()
-      ..delete(_org(orgId).collection('members').doc(user.uid))
-      ..delete(_userDoc(user.uid).collection('memberships').doc(orgId));
-    await batch.commit();
+    await _org(orgId).collection('members').doc(user.uid).delete();
   }
 
   // ---------------------------------------------------------------------
@@ -127,10 +129,6 @@ class OrgService {
         'joinedAt': FieldValue.serverTimestamp(),
       })
       ..delete(orgRef.collection('invitations').doc(inv.email))
-      ..set(_userDoc(user.uid).collection('memberships').doc(inv.orgId), {
-        'orgName': inv.orgName,
-        'joinedAt': FieldValue.serverTimestamp(),
-      })
       ..set(_userDoc(user.uid), {
         'email': _emailOf(user),
         'activeOrgId': inv.orgId,
@@ -152,20 +150,91 @@ class OrgService {
       _org(orgId).collection('members').doc(uid).delete();
 
   /// Organisationen, in denen der Benutzer Mitglied ist (orgId → Name).
-  static Stream<Map<String, String>> myMemberships(User user) =>
-      _userDoc(user.uid)
-          .collection('memberships')
-          .snapshots()
-          .map(
-            (s) => {
-              for (final d in s.docs)
-                d.id: d.data()['orgName'] as String? ?? '',
-            },
-          );
+  ///
+  /// Wird direkt aus den Mitgliedseinträgen aller Organisationen gelesen
+  /// (Collection-Group-Abfrage) – kann also nicht "verloren gehen".
+  static Stream<Map<String, String>> myOrganizations(User user) => _db
+      .collectionGroup('members')
+      .where('email', isEqualTo: _emailOf(user))
+      .snapshots()
+      .asyncMap((snapshot) async {
+        final result = <String, String>{};
+        for (final memberDoc in snapshot.docs) {
+          if (memberDoc.id != user.uid) continue;
+          final orgRef = memberDoc.reference.parent.parent;
+          if (orgRef == null) continue;
+          try {
+            final org = await orgRef.get();
+            if (org.exists) {
+              result[org.id] = org.data()?['name'] as String? ?? org.id;
+            }
+          } on FirebaseException {
+            // Organisation nicht lesbar – überspringen
+          }
+        }
+        return result;
+      });
 
-  /// Entfernt einen veralteten Eintrag aus der eigenen Organisationsliste.
-  static Future<void> forgetMembership(User user, String orgId) =>
-      _userDoc(user.uid).collection('memberships').doc(orgId).delete();
+  // ---------------------------------------------------------------------
+  // Beitrittscode
+  // ---------------------------------------------------------------------
+
+  /// Erzeugt einen neuen Beitrittscode für die Organisation. Ein bisheriger
+  /// Code ([oldCode]) wird dabei ungültig.
+  static Future<String> createJoinCode({
+    required String orgId,
+    required String orgName,
+    String? oldCode,
+  }) async {
+    final code = generateJoinCode();
+    final batch = _db.batch()
+      ..set(_db.collection('joinCodes').doc(code), {
+        'orgId': orgId,
+        'orgName': orgName,
+        'role': kJoinCodeRoleId,
+        'createdAt': FieldValue.serverTimestamp(),
+      })
+      ..update(_org(orgId), {'joinCode': code});
+    if (oldCode != null && oldCode != code) {
+      batch.delete(_db.collection('joinCodes').doc(oldCode));
+    }
+    await batch.commit();
+    return code;
+  }
+
+  /// Tritt per Beitrittscode (oder Beitrittslink) einer Organisation bei
+  /// und macht sie zur aktiven Organisation. Liefert ihren Namen.
+  static Future<String> joinWithCode(User user, String input) async {
+    final code = extractJoinCode(input);
+    if (!isValidJoinCode(code)) {
+      throw const OrgException(
+        'Bitte den vollständigen Code mit 24 Zeichen eingeben.',
+      );
+    }
+
+    final codeDoc = await _db.collection('joinCodes').doc(code).get();
+    final data = codeDoc.data();
+    if (!codeDoc.exists || data == null) {
+      throw const OrgException(
+        'Dieser Beitrittscode ist ungültig oder nicht mehr aktuell.',
+      );
+    }
+    final orgId = data['orgId'] as String;
+    final orgName = data['orgName'] as String? ?? '';
+
+    final memberRef = _org(orgId).collection('members').doc(user.uid);
+    final existing = await memberRef.get();
+    if (!existing.exists) {
+      await memberRef.set({
+        'email': _emailOf(user),
+        'role': data['role'] as String? ?? kJoinCodeRoleId,
+        'joinCode': code,
+        'joinedAt': FieldValue.serverTimestamp(),
+      });
+    }
+    await selectOrganization(user, orgId);
+    return orgName;
+  }
 
   // ---------------------------------------------------------------------
   // Rollen

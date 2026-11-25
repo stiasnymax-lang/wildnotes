@@ -6,7 +6,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'organization.dart';
 
-enum OrgSessionStatus { signedOut, loading, noOrganization, ready }
+enum OrgSessionStatus { signedOut, loading, noOrganization, ready, error }
 
 /// Hält den eingeloggten Benutzer, seine aktive Organisation und seine
 /// Mitgliedschaft (inkl. Rolle) und hört live auf Änderungen.
@@ -38,6 +38,11 @@ class OrgSession extends ChangeNotifier {
   Member? _member;
   bool _orgLoaded = false;
   bool _memberLoaded = false;
+  bool _orgFromCache = false;
+  bool _memberFromCache = false;
+
+  /// Fehlermeldung, wenn [status] == [OrgSessionStatus.error].
+  String? errorMessage;
 
   /// Hinweis für den Benutzer, z. B. wenn er aus einer Organisation
   /// entfernt wurde.
@@ -101,6 +106,9 @@ class OrgSession extends ChangeNotifier {
   // Interne Logik
   // ---------------------------------------------------------------------
 
+  /// Lädt alles neu (z. B. nach einem Netzwerk- oder App-Check-Fehler).
+  void retry() => _onAuth(_user);
+
   void _onAuth(User? user) {
     _userSub?.cancel();
     _cancelOrg();
@@ -108,6 +116,7 @@ class OrgSession extends ChangeNotifier {
     _userDocLoaded = false;
     _activeOrgId = null;
     notice = null;
+    errorMessage = null;
 
     if (user == null) {
       _setStatus(OrgSessionStatus.signedOut);
@@ -115,28 +124,21 @@ class OrgSession extends ChangeNotifier {
     }
 
     _setStatus(OrgSessionStatus.loading);
-    _userSub = _db
-        .collection('users')
-        .doc(user.uid)
-        .snapshots()
-        .listen(
-          (doc) {
-            final orgId = doc.data()?['activeOrgId'] as String?;
-            if (!_userDocLoaded || orgId != _activeOrgId) {
-              _userDocLoaded = true;
-              _switchTo(orgId);
-            }
-          },
-          onError: (Object _) {
-            _userDocLoaded = true;
-            _switchTo(null);
-          },
-        );
+    _userSub = _db.collection('users').doc(user.uid).snapshots().listen((doc) {
+      final orgId = doc.data()?['activeOrgId'] as String?;
+      if (!_userDocLoaded ||
+          orgId != _activeOrgId ||
+          _status == OrgSessionStatus.error) {
+        _userDocLoaded = true;
+        _switchTo(orgId);
+      }
+    }, onError: (Object e) => _fail(e));
   }
 
   void _switchTo(String? orgId) {
     _cancelOrg();
     _activeOrgId = orgId;
+    errorMessage = null;
 
     if (orgId == null) {
       _setStatus(OrgSessionStatus.noOrganization);
@@ -149,8 +151,9 @@ class OrgSession extends ChangeNotifier {
     _orgSub = orgRef.snapshots().listen((doc) {
       _org = doc.exists ? Organization.fromDoc(doc) : null;
       _orgLoaded = true;
+      _orgFromCache = doc.metadata.isFromCache;
       _evaluate(orgId);
-    }, onError: (Object _) => _lostAccess(orgId));
+    }, onError: (Object e) => _checkMembershipAfterError(orgId, e));
     _memberSub = orgRef
         .collection('members')
         .doc(_user!.uid)
@@ -158,28 +161,84 @@ class OrgSession extends ChangeNotifier {
         .listen((doc) {
           _member = doc.exists ? Member.fromDoc(doc) : null;
           _memberLoaded = true;
+          _memberFromCache = doc.metadata.isFromCache;
           _evaluate(orgId);
-        }, onError: (Object _) => _lostAccess(orgId));
+        }, onError: (Object e) => _checkMembershipAfterError(orgId, e));
   }
 
   void _evaluate(String orgId) {
-    if (!_orgLoaded || !_memberLoaded) return;
+    if (_activeOrgId != orgId || !_orgLoaded || !_memberLoaded) return;
     if (_org == null || _member == null) {
-      _lostAccess(orgId);
+      // Nur auf eine Antwort des Servers verlassen, nicht auf den Cache.
+      final confirmed =
+          (_org == null && !_orgFromCache) ||
+          (_member == null && !_memberFromCache);
+      if (confirmed) _lostAccess(orgId);
       return;
     }
     notice = null;
+    errorMessage = null;
     _setStatus(OrgSessionStatus.ready);
   }
 
-  /// Die aktive Organisation existiert nicht mehr oder der Benutzer ist
-  /// kein Mitglied mehr → zurück zur Organisationsauswahl.
+  /// Nach einem Lesefehler prüfen, ob die Mitgliedschaft wirklich weg ist
+  /// (dann "kein Zugriff mehr") oder ob es nur ein vorübergehendes Problem
+  /// ist (dann Fehleranzeige mit "Erneut versuchen" – es wird nichts
+  /// gelöscht oder abgewählt).
+  Future<void> _checkMembershipAfterError(String orgId, Object error) async {
+    if (_activeOrgId != orgId) return;
+    try {
+      final member = await _db
+          .collection('organizations')
+          .doc(orgId)
+          .collection('members')
+          .doc(_user!.uid)
+          .get(const GetOptions(source: Source.server));
+      if (_activeOrgId != orgId) return;
+      if (!member.exists) {
+        _lostAccess(orgId);
+        return;
+      }
+    } catch (_) {
+      // Server nicht erreichbar oder App Check fehlgeschlagen
+    }
+    _fail(error);
+  }
+
+  void _fail(Object error) {
+    final wasReady = _status == OrgSessionStatus.ready;
+    _cancelOrg();
+    errorMessage = _describe(error);
+    _setStatus(OrgSessionStatus.error);
+    if (wasReady) {
+      navigatorKey.currentState?.popUntil((route) => route.isFirst);
+    }
+  }
+
+  static String _describe(Object error) {
+    if (error is FirebaseException) {
+      return switch (error.code) {
+        'permission-denied' =>
+          'Zugriff verweigert (permission-denied). Das kann an einer '
+              'fehlgeschlagenen App-Check-Prüfung oder an fehlenden Rechten '
+              'liegen.',
+        'unavailable' =>
+          'Der Server ist gerade nicht erreichbar. Bitte Internetverbindung '
+              'prüfen.',
+        _ => '${error.message ?? 'Unbekannter Fehler'} (${error.code})',
+      };
+    }
+    return error.toString();
+  }
+
+  /// Die Organisation existiert nicht mehr oder der Benutzer wurde
+  /// entfernt (vom Server bestätigt) → zurück zur Organisationsauswahl.
   void _lostAccess(String orgId) {
     if (_activeOrgId != orgId) return;
     final wasReady = _status == OrgSessionStatus.ready;
     _cancelOrg();
     _activeOrgId = null;
-    notice = 'Du hast keinen Zugriff mehr auf diese Organisation.';
+    notice = 'Du bist nicht mehr Mitglied dieser Organisation.';
     _setStatus(OrgSessionStatus.noOrganization);
 
     if (wasReady) {
@@ -188,9 +247,9 @@ class OrgSession extends ChangeNotifier {
 
     final uid = _user?.uid;
     if (uid != null) {
-      final userRef = _db.collection('users').doc(uid);
-      userRef.collection('memberships').doc(orgId).delete().ignore();
-      userRef.set({'activeOrgId': null}, SetOptions(merge: true)).ignore();
+      _db.collection('users').doc(uid).set({
+        'activeOrgId': null,
+      }, SetOptions(merge: true)).ignore();
     }
   }
 
@@ -203,6 +262,8 @@ class OrgSession extends ChangeNotifier {
     _member = null;
     _orgLoaded = false;
     _memberLoaded = false;
+    _orgFromCache = false;
+    _memberFromCache = false;
   }
 
   void _setStatus(OrgSessionStatus status) {

@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/settings_screen.dart';
 import '../utils/messages.dart';
+import 'join_code.dart';
 import 'org_service.dart';
 import 'org_session.dart';
 import 'org_widgets.dart';
@@ -18,13 +19,38 @@ class OrgSetupScreen extends StatefulWidget {
 
 class _OrgSetupScreenState extends State<OrgSetupScreen> {
   final _name = TextEditingController();
+  // Vorausgefüllt, wenn die App über einen Beitrittslink geöffnet wurde
+  final _code = TextEditingController(
+    text: PendingJoin.code == null ? '' : formatJoinCode(PendingJoin.code!),
+  );
   bool _importLegacy = false;
   bool _busy = false;
+  bool _joining = false;
+
+  // Einmal anlegen, nicht bei jedem setState neu abonnieren
+  late final Stream<Map<String, String>> _myOrgs = OrgService.myOrganizations(
+    OrgScope.of(context).user!,
+  );
 
   @override
   void dispose() {
     _name.dispose();
+    _code.dispose();
     super.dispose();
+  }
+
+  Future<void> _join() async {
+    final user = OrgScope.of(context).user!;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _joining = true);
+    try {
+      final name = await OrgService.joinWithCode(user, _code.text);
+      PendingJoin.code = null;
+      messenger.showMessage('Willkommen bei $name!');
+    } catch (e) {
+      messenger.showMessage(errorText(e), long: true);
+    }
+    if (mounted) setState(() => _joining = false);
   }
 
   Future<void> _create() async {
@@ -100,14 +126,15 @@ class _OrgSetupScreenState extends State<OrgSetupScreen> {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
               child: Text(
                 'In WildNotes gehören Tiere, Gehege und Termine immer zu einer '
-                'Organisation. Nimm eine Einladung an, wähle eine deiner '
-                'Organisationen oder lege eine neue an.',
+                'Organisation. Nimm eine Einladung an, tritt mit einem Code '
+                'bei, wähle eine deiner Organisationen oder lege eine neue '
+                'an.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),
             MyInvitationsSection(user: user),
             StreamBuilder(
-              stream: OrgService.myMemberships(user),
+              stream: _myOrgs,
               builder: (context, snapshot) {
                 final memberships = snapshot.data ?? const <String, String>{};
                 if (memberships.isEmpty) return const SizedBox.shrink();
@@ -125,6 +152,35 @@ class _OrgSetupScreenState extends State<OrgSetupScreen> {
                   ],
                 );
               },
+            ),
+            const SectionHeader('Mit Code beitreten'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: TextField(
+                controller: _code,
+                textCapitalization: TextCapitalization.characters,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: const InputDecoration(
+                  labelText: 'Beitrittscode (24 Zeichen) oder Link',
+                  hintText: 'XXXX-XXXX-XXXX-XXXX-XXXX-XXXX',
+                ),
+                onSubmitted: (_) {
+                  if (!_joining) _join();
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: FilledButton.tonal(
+                onPressed: _joining ? null : _join,
+                child: _joining
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Beitreten'),
+              ),
             ),
             const SectionHeader('Neue Organisation erstellen'),
             Padding(

@@ -7,6 +7,7 @@ import 'app_check.dart';
 import 'auth/welcome_screen.dart';
 import 'core/main_shell.dart';
 import 'firebase_options.dart';
+import 'org/join_code.dart';
 import 'org/org_session.dart';
 
 /// Einstiegspunkt der WildNotes-App.
@@ -16,6 +17,8 @@ Future<void> main() async {
   // App Check vor allen anderen Firebase-Aufrufen aktivieren
   await activateAppCheck();
   await initializeDateFormatting('de');
+  // Beitrittscode aus einem Einladungslink (…/wildnotes/?join=CODE)
+  PendingJoin.readFromUrl();
   OrgSession.instance.init();
   runApp(const WildNotesApp());
 }

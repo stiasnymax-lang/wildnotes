@@ -136,12 +136,17 @@ class Organization {
     required this.name,
     required this.ownerId,
     required this.roles,
+    this.joinCode,
   });
 
   final String id;
   final String name;
   final String ownerId;
   final Map<String, OrgRole> roles;
+
+  /// Aktueller Beitrittscode (24 Zeichen) oder `null`, falls noch keiner
+  /// erzeugt wurde.
+  final String? joinCode;
 
   factory Organization.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? const <String, dynamic>{};
@@ -150,6 +155,7 @@ class Organization {
       id: doc.id,
       name: data['name'] as String? ?? '',
       ownerId: data['ownerId'] as String? ?? '',
+      joinCode: data['joinCode'] as String?,
       roles: {
         for (final e in rolesMap.entries)
           e.key: OrgRole.fromMap(

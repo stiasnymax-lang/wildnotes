@@ -59,12 +59,17 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      // E-Mail noch nicht bestätigt → abmelden & Hinweis
-      await auth.signOut();
+      // E-Mail noch nicht bestätigt → Bestätigungsseite (dort kann man
+      // auch eine neue Bestätigungsmail anfordern)
       messenger.showMessage(
         'Bitte bestätige zuerst deine E-Mail-Adresse.',
         long: true,
       );
+      navigator.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const OrgGate()),
+        (_) => false,
+      );
+      return;
     } on FirebaseAuthException {
       messenger.showMessage('Login fehlgeschlagen.');
     }

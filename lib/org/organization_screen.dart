@@ -1,7 +1,9 @@
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:material_ui/material_ui.dart';
 
 import '../core/settings_screen.dart';
 import '../utils/messages.dart';
+import 'join_code.dart';
 import 'org_service.dart';
 import 'org_session.dart';
 import 'org_widgets.dart';
@@ -138,6 +140,7 @@ class OrganizationScreen extends StatelessWidget {
             ),
             const _MemberList(),
             if (canManageMembers) const _PendingInvitations(),
+            if (canManageMembers) const _JoinCodeSection(),
             const SectionHeader('Verwaltung'),
             ListTile(
               leading: const Icon(Icons.admin_panel_settings_outlined),
@@ -352,6 +355,125 @@ class _PendingInvitations extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// Beitrittscode (24 Zeichen) und Beitrittslink der Organisation. Wer den
+/// Code oder Link hat, kann als "Betrachter" beitreten; die Rolle lässt
+/// sich danach in der Mitgliederliste ändern.
+class _JoinCodeSection extends StatefulWidget {
+  const _JoinCodeSection();
+
+  @override
+  State<_JoinCodeSection> createState() => _JoinCodeSectionState();
+}
+
+class _JoinCodeSectionState extends State<_JoinCodeSection> {
+  bool _busy = false;
+
+  Future<void> _generate({required bool replace}) async {
+    final session = OrgScope.of(context);
+    final org = session.organization;
+    final messenger = ScaffoldMessenger.of(context);
+    if (replace) {
+      final ok = await confirmAction(
+        context,
+        title: 'Neuen Code erzeugen?',
+        message:
+            'Der bisherige Code und Link funktionieren danach nicht mehr. '
+            'Bereits beigetretene Mitglieder bleiben Mitglieder.',
+        confirmLabel: 'Neu erzeugen',
+      );
+      if (!ok) return;
+    }
+    setState(() => _busy = true);
+    try {
+      await OrgService.createJoinCode(
+        orgId: org.id,
+        orgName: org.name,
+        oldCode: org.joinCode,
+      );
+      messenger.showMessage('Beitrittscode erzeugt');
+    } catch (e) {
+      messenger.showMessage(errorText(e), long: true);
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  Future<void> _copy(String text, String what) async {
+    final messenger = ScaffoldMessenger.of(context);
+    await Clipboard.setData(ClipboardData(text: text));
+    messenger.showMessage('$what kopiert');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final org = OrgScope.of(context).organization;
+    final code = org.joinCode;
+    final roleName = org.roleName(kJoinCodeRoleId);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionHeader('Beitreten per Code'),
+        if (code == null)
+          ListTile(
+            leading: const Icon(Icons.vpn_key_outlined),
+            title: const Text('Noch kein Beitrittscode vorhanden'),
+            subtitle: const Text(
+              'Mit Code oder Link können neue Mitglieder ohne Einladung '
+              'beitreten.',
+            ),
+            trailing: FilledButton.tonal(
+              onPressed: _busy ? null : () => _generate(replace: false),
+              child: const Text('Erzeugen'),
+            ),
+          )
+        else ...[
+          ListTile(
+            leading: const Icon(Icons.vpn_key_outlined),
+            title: SelectableText(
+              formatJoinCode(code),
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1,
+              ),
+            ),
+            subtitle: Text('Beitrittscode · neue Mitglieder: $roleName'),
+            trailing: IconButton(
+              tooltip: 'Code kopieren',
+              icon: const Icon(Icons.copy),
+              onPressed: () => _copy(code, 'Code'),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.link),
+            title: SelectableText(
+              joinLink(code),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            subtitle: const Text('Beitrittslink'),
+            trailing: IconButton(
+              tooltip: 'Link kopieren',
+              icon: const Icon(Icons.copy),
+              onPressed: () => _copy(joinLink(code), 'Link'),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: TextButton.icon(
+                onPressed: _busy ? null : () => _generate(replace: true),
+                icon: const Icon(Icons.autorenew),
+                label: const Text('Neuen Code erzeugen'),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

@@ -2,7 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../utils/messages.dart';
-import 'login_screen.dart';
+import '../core/main_shell.dart';
+import 'verify_email_screen.dart';
 import 'password_field.dart';
 import '../utils/responsive.dart';
 
@@ -71,6 +72,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       try {
         await user.sendEmailVerification();
+        VerificationMail.markSent(user);
         messenger.showMessage(
           'Konto erstellt! Bitte E-Mail bestätigen.',
           long: true,
@@ -81,9 +83,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
         messenger.showMessage(fehler, long: true);
       }
 
-      await auth.signOut();
-      navigator.pushReplacement(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      // Weiter zur Bestätigungsseite (angemeldet bleiben)
+      navigator.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const OrgGate()),
+        (_) => false,
       );
     } on FirebaseAuthException catch (e) {
       messenger.showMessage(
