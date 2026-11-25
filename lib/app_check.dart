@@ -9,7 +9,7 @@ import 'package:flutter/foundation.dart';
 /// mit dem Anbieter „Fraud Defense“ registriert sein.
 ///
 /// Solange hier nichts eingetragen ist, bleibt App Check im Web aus.
-const String kRecaptchaSiteKey = '6Lc5jTEuAAAAAHofvltX7057I7kKdAvHkbumSJwi';
+const String kRecaptchaSiteKey = '6Lf9gTEuAAAAAFFH71Bi7VaGIqHz5SbVt1_9Fb-4';
 
 /// Aktiviert Firebase App Check: Jede Anfrage an Firebase (Login,
 /// Firestore) trägt dann einen Nachweis, dass sie aus der echten App kommt.
