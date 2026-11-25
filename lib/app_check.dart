@@ -1,21 +1,22 @@
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter/foundation.dart';
 
-/// Websiteschlüssel (Site Key) von reCAPTCHA v3 für die Web-App.
+/// Websiteschlüssel (Site Key) von reCAPTCHA (Google Cloud Fraud Defense /
+/// reCAPTCHA Enterprise) für die Web-App.
 ///
 /// Der Websiteschlüssel ist öffentlich und darf im Code stehen. Der
-/// zugehörige *geheime* Schlüssel gehört nur in die Firebase Console
-/// (App Check → Apps → Web-App → reCAPTCHA).
+/// Schlüssel muss in der Firebase Console unter App Check → Apps → Web-App
+/// mit dem Anbieter „Fraud Defense“ registriert sein.
 ///
 /// Solange hier nichts eingetragen ist, bleibt App Check im Web aus.
-const String kRecaptchaSiteKey = '';
+const String kRecaptchaSiteKey = '6Lc5jTEuAAAAAHofvltX7057I7kKdAvHkbumSJwi';
 
 /// Aktiviert Firebase App Check: Jede Anfrage an Firebase (Login,
 /// Firestore) trägt dann einen Nachweis, dass sie aus der echten App kommt.
 /// Skripte mit kopiertem API-Key werden abgewiesen, sobald in der Firebase
 /// Console die Erzwingung eingeschaltet ist.
 ///
-/// - Web: reCAPTCHA v3 (unsichtbar, kein Klick nötig)
+/// - Web: reCAPTCHA Enterprise / Fraud Defense (unsichtbar, kein Klick)
 /// - Android Debug-Builds: Debug-Provider. Beim ersten Start steht im Log
 ///   ein Debug-Token, das in der Firebase Console freigegeben werden muss.
 /// - Android Release: Play Integrity
@@ -27,7 +28,9 @@ Future<void> activateAppCheck() async {
 
   try {
     await FirebaseAppCheck.instance.activate(
-      providerWeb: kIsWeb ? ReCaptchaV3Provider(kRecaptchaSiteKey) : null,
+      providerWeb: kIsWeb
+          ? ReCaptchaEnterpriseProvider(kRecaptchaSiteKey)
+          : null,
       providerAndroid: kDebugMode
           ? const AndroidDebugProvider()
           : const AndroidPlayIntegrityProvider(),
