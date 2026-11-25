@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../utils/messages.dart';
 import 'login_screen.dart';
+import 'password_field.dart';
 import '../utils/responsive.dart';
 
 /// Registrierung eines neuen Kontos (früher RegisterActivity).
@@ -111,11 +112,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 validator: _validateEmail,
               ),
               const SizedBox(height: 12),
-              TextFormField(
+              PasswordField(
                 controller: _password,
-                obscureText: true,
                 autofillHints: const [AutofillHints.newPassword],
-                decoration: const InputDecoration(labelText: 'Password'),
                 validator: _validatePassword,
               ),
               const SizedBox(height: 24),

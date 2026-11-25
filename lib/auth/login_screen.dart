@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/main_shell.dart';
 import '../utils/messages.dart';
+import 'password_field.dart';
 import '../utils/responsive.dart';
 
 /// Login mit E-Mail und Passwort (früher LoginActivity).
@@ -85,11 +86,8 @@ class _LoginScreenState extends State<LoginScreen> {
               decoration: const InputDecoration(labelText: 'Email'),
             ),
             const SizedBox(height: 12),
-            TextField(
+            PasswordField(
               controller: _password,
-              obscureText: true,
-              autofillHints: const [AutofillHints.password],
-              decoration: const InputDecoration(labelText: 'Password'),
               onSubmitted: (_) {
                 if (!_busy) _login();
               },
