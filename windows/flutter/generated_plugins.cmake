@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   firebase_core
   cloud_firestore
+  firebase_app_check
   firebase_auth
 )
 

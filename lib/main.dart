@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'app_check.dart';
 import 'auth/welcome_screen.dart';
 import 'core/main_shell.dart';
 import 'firebase_options.dart';
@@ -12,6 +13,8 @@ import 'org/org_session.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // App Check vor allen anderen Firebase-Aufrufen aktivieren
+  await activateAppCheck();
   await initializeDateFormatting('de');
   OrgSession.instance.init();
   runApp(const WildNotesApp());
